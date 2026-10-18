@@ -2,12 +2,14 @@ name: Build Mod Menu
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,30 +20,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      - name: Repair missing Gradle wrapper
         run: |
-          SDKMAN=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -name sdkmanager -type f | head -n 1)
-          echo "sdkmanager: $SDKMAN"
-          yes | "$SDKMAN" --licenses || true
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            VER=$(sed -n 's|.*gradle-\([0-9][0-9.]*\)-.*|\1|p' gradle/wrapper/gradle-wrapper.properties)
+            VER=${VER:-8.7}
+            echo "gradle-wrapper.jar missing -> regenerating for Gradle $VER"
+            gradle wrapper --gradle-version "$VER"
+          fi
 
       - name: Make gradlew executable
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Extract native libs
-        run: unzip -o app/build/outputs/apk/debug/app-debug.apk -d out
-        continue-on-error: true
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: panel-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload native libs
-        uses: actions/upload-artifact@v4
-        with:
-          name: panel-libs
-          path: out/lib/
+          name: mod-menu-debug-apk
+          path: '**/build/outputs/apk/debug/*.apk'
+          if-no-files-found: error
